@@ -1,0 +1,214 @@
+---
+title: "Assignment 2: Quantifying NHL Team Strength"
+output: pdf_document
+date: "Due September 26, 2025"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this assignment you will quantify team strength using National Hockey League (NHL) data from last season. First, you will calculate Pythagorean expectation and see if it is a better predictor of future success than points percentage. Then, you will fit a Bradley-Terry model and compare differences in how team strength is quantified.
+
+Submit your assignment to Gradescope as a PDF file generated from your R Markdown. Make sure your PDF includes all code, outputs, and written answers to questions. All code and outputs used to answer the written questions must be included in the PDF for full credit.
+
+## Loading the data
+
+You will use data from the R package `nhlscraper` in this assignment. This package scrapes data from the NHL API.
+
+```{r, warning = F, message = F}
+# Run line of code below once to install nhlscraper
+# install.packages('nhlscraper')
+library(nhlscraper) # scrapes data from NHL API
+library(tidyverse)
+```
+
+Run the code below to load in game-level data from the NHL 2024-25 season.
+
+```{r}
+# only consider game dates from 2024-25 season
+season_days <- seq.Date(
+  from = as.Date("2024-10-04"),
+  to   = as.Date("2025-04-17"),
+  by   = "day"
+)
+# convert to string format
+season_days_str <- as.character(season_days)
+# get game-level stats for regular season games
+team_game_stats <- get_team_statistics(season = get_season_now()$seasonId, 
+                                       report = "summary", 
+                                       is_aggregate = FALSE, 
+                                       is_game = TRUE, 
+                                       dates = season_days_str, 
+                                       game_types = 2)
+```
+
+## Pythagorean Expectation [15 points]
+
+1 (5 points)\. In the NHL, a win is worth 2 points, an overtime loss (OTL) is worth 1 point and a regulation loss is worth 0 points. A team's points percentage (P\%) is calculated as:
+
+$$
+P\% = \frac{\text{Total Points}}{\text{Total Possible Points}}
+$$
+where "Total Possible Points" is equal to the number of games played times two. For a full regular season, this equals 82 x 2 = 164.
+
+Summarize `team_game_stats` to calculate each team's points percentage and Pythagorean expectation (using goals for and goals against, with $\alpha = 2.11$) for the season. 
+
+Which team most over-performed and which team most under-performed their expectation, based on the difference between Pythagorean expectation and points percentage? 
+
+```{r}
+alpha <- 2.11
+
+team_summary <- team_game_stats %>%
+  group_by(teamFullName) %>%
+  summarise(
+    goals_for = sum(goalsFor),
+    goals_against = sum(goalsAgainst),
+    wins = sum(wins),
+    otl = sum(otLosses),
+    games_played = n()
+  ) %>%
+  mutate(
+    total_points = 2 * wins + otl,
+    total_possible = games_played * 2,
+    points_pct = total_points / total_possible,
+    pyth_exp = (goals_for ^ alpha) / ((goals_for ^ alpha) + (goals_against ^ alpha)),
+    diff = points_pct - pyth_exp) %>%
+  arrange(desc(diff))
+
+# Which team over-performed and under-performed:
+team_summary %>%
+  filter(diff == max(diff) | diff == min(diff))
+```
+The team that over-performed was the Calgary Flames. The team that under-performed was the Tampa Bay Lightning. 
+
+2 (5 points)\. Create two new dataframes called `first_half` and `second_half` that filter `team_game_stats` to game dates before 1/05/2025, and 1/05/2025 and later, respectively. For both datasets calculate Pythagorean expectation (using $\alpha = 2.11$) and points percentage. 
+
+*Note:* The number of games in each half will be different from a full season (82 games). Make sure you use the actual number of games played in each half when calculating percentages.
+
+```{r}
+first_half <- team_game_stats %>%
+  filter(gameDate < "2025-01-05") %>%
+  group_by(teamFullName) %>%
+  summarise(
+    goals_for = sum(goalsFor),
+    goals_against = sum(goalsAgainst),
+    wins = sum(wins),
+    otl = sum(otLosses),
+    games_played = n()
+  ) %>%
+  mutate(
+    total_points = 2 * wins + otl,
+    total_possible = games_played * 2,
+    points_pct = total_points / total_possible,
+    pyth_exp = (goals_for ^ alpha) / ((goals_for ^ alpha) + (goals_against ^ alpha))
+  )
+
+second_half <- team_game_stats %>%
+  filter(gameDate >= "2025-01-05") %>%
+  group_by(teamFullName) %>%
+  summarise(
+    goals_for = sum(goalsFor),
+    goals_against = sum(goalsAgainst),
+    wins = sum(wins),
+    otl = sum(otLosses),
+    games_played = n()
+  ) %>%
+  mutate(
+    total_points = 2 * wins + otl,
+    total_possible = games_played * 2,
+    points_pct = total_points / total_possible,
+    pyth_exp = (goals_for ^ alpha) / ((goals_for ^ alpha) + (goals_against ^ alpha))
+  )
+```
+
+3 (5 points)\. Join `first_half` and `second_half` on team. Calculate the correlation between first half Pythagorean expectation and second half points percentage. Calculate the correlation between first half points percentage and second half points percentage. Describe and interpret your results.
+
+```{r}
+combined <- first_half %>%
+  select(teamFullName, points_pct_first = points_pct, pyth_first = pyth_exp) %>%
+  inner_join(
+    second_half %>% select(teamFullName, points_pct_second = points_pct, pyth_second = pyth_exp), by = "teamFullName")
+
+cor_pyth_to_second <- cor(combined$pyth_first, combined$points_pct_second)
+cor_points_to_second <- cor(combined$points_pct_first, combined$points_pct_second)
+
+cor_results <- data.frame(
+  Comparison = c("First-half Pythagorean vs Second-half Points %", 
+                 "First-half Points % vs Second-half Points %"),
+  Correlation = c(round(cor_pyth_to_second, 3), 
+                  round(cor_points_to_second, 3))
+)
+
+cor_results
+```
+The  correlation between first-half Pythagorean expectation and second-half points percentage is 0.669, suggesting that underlying goal-based performance is a fairly good predictor of future results. The correlation between first-half points percentage and second-half points percentage is 0.643. Since it is slightly weaker, we can conclude that raw win-loss performance is slightly less predictive than goal-based metrics. Overall, this supports the idea that Pythagorean expectation captures true team strength better than actual points percentage, which may be influenced by luck or close-game outcomes.
+
+## Bradley-Terry model [15 points]
+
+Next, you will fit a Bradley-Terry model to quanitfy team strength. Run the following code to get a reformatted game result dataset, called `bt_df`, that can be used to fit the model.
+
+```{r}
+# Reformat dataset
+bt_df <- team_game_stats %>%
+  mutate(value = ifelse(homeRoad == "H", 1, -1)) %>%
+  mutate(home_team_win = wins[homeRoad == "H"][1], .by = gameId) %>%
+  select(gameId, teamFullName, value, home_team_win) %>%
+  pivot_wider(names_from = teamFullName, values_from = value, values_fill = 0) %>%
+  arrange(gameId)
+```
+
+4 (5 points)\. Using `bt_df`, fit a Bradley-Terry model, with `home_team_win` as the response and the team indicator columns as predictors. Output a summary of the model. According to the model, what is the strongest and weakest NHL team that season? Does this agree with the strongest and weakest team according to Pythagorean expectation and points percentage? 
+
+```{r}
+# Fit Bradley-Terry model
+bt_model <- glm(home_team_win ~ . , 
+                data = bt_df %>% select(-gameId), 
+                family = binomial())
+
+sort(summary(bt_model)$coefficients[-1,1],decreasing = TRUE)
+```
+The strongest NHL team is the Winnipeg Jets. The weakest team is San Jose Sharks. This does not agree with the strongest and weakest team according to Pythagorean expectation and points percentage which are the Calgary Flames(strongest) and Tampa Bay Lightning(weakest) respectively. 
+
+5 (4 points)\. Interpret the intercept of the Bradley-Terry model. What is the effect of home ice advantage?
+
+```{r}
+exp(coef(bt_model)[1])
+```
+The home team is 1.3 times more likely to win because of home advantage by playing on their own ice.
+
+6 (3 points)\. In the 2025 Stanley Cup final, the Florida Panthers played the Edmonton Oilers. According to the Bradley-Terry model what's the probability that the Panthers beat the Oilers in a game? 
+
+```{r}
+new_game <- tibble(
+  `Florida Panthers` = 1, 
+  `Edmonton Oilers` = -1
+)
+all_teams <- setdiff(names(bt_df), c("gameId", "home_team_win"))
+for(team in all_teams) {
+  if(!team %in% names(new_game)) new_game[[team]] <- 0
+}
+
+# Use model to predict
+prob_panthers_win <- predict(bt_model, newdata = new_game, type = "response")
+prob_panthers_win*100
+```
+The probability that the Panthers beat the Oilers in a game is approximately 55.9%. 
+
+7 (3 points)\. Using the probability of the Panthers winning that you calculated in the previous question, calculate the probability that the Panthers win the Stanley cup final, which is a best-of-7 series. To win a best-of-7 series, the Panthers must win 4 games before the Oilers do.
+
+
+*Hint:* to calculate the probability of winning a best-of-7 series, you can add together the probability of winning the series in 4 games, 5 games, 6 games and 7 games: 
+
+- To win in 4 games the team must win the first 4 games. 
+- To win in 5 games, the team must win 3 of the first 4 games and the 5th game. 
+- To win in 6 games, the team must win 3 of the first 5 games and the 6th game. 
+- To win in 7 games, the team must win 3 of the first 6 games and the 7th game.
+```{r}
+p <- prob_panthers_win
+
+series_win_prob <- p^4 + 4*p^4*(1-p) + 10*p^4*(1-p)^2 + 20*p^4*(1-p)^3
+series_win_prob*100
+```
+The probability of the Panthers winning a best-of-7 series against the Oilers for the Stanley Cup is 62.8%
+
