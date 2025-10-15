@@ -1,0 +1,154 @@
+---
+title: "Assignment 1: Finding and Exploring Sports Data"
+output: pdf_document
+date: "Due Friday, September 5 11:59 pm"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The goal of this assignment is to practice finding, loading, and exploring publicly available sports data. In the first part of the assignment, you will investigate publicly available data for a sport of your choice. In the second part of this assignment you will practice loading and exploring NCAA softball data in R.
+
+Submit your assignment to Gradescope as a PDF file generated from your R Markdown. Make sure your PDF includes all code, outputs, and written answers to questions. All code and outputs used to answer the written questions must be included in the PDF for full credit.
+
+For an introduction to R markdown, follow [**this link**](https://rmarkdown.rstudio.com/articles_intro.html). If you have any issues knitting to PDF, check out the troubleshooting steps [**linked here**](https://ubco-biology.github.io/BIOL202/veryify_knit.html).
+
+## Question 1: Exploring Publicly Available Data [15 points, 5 points per dataset]
+
+Choose one of the following sports: American football, soccer, basketball, baseball, softball, or hockey.
+For the sport of your choosing, find **three** publicly available datasets from *at least 2 different sources* (e.g., at least two different R packages, websites, etc). 
+Do not use Kaggle datasets.
+For each dataset, answer the following:
+
+- Which dataset did you chose? Give a brief description. Where did you get this dataset? (If you used an R package to get the data, what is the R package called and where does the R package get the data from). Load the data into R and print the first 5 rows.
+- What is the unit of observation of the dataset (i.e., what does each row describe)?
+- List at least three of the columns in the dataset.
+- What time span does the data cover?
+- What is a question you could answer using this dataset?
+
+```{r}
+library(Lahman)
+head(Batting,5)
+```
+Dataset 1: I choose the Batting dataset. This dataset provides MLB statistics which are recorded in the Sean 'Lahman' Baseball Database. I got this dataset from the Lahman library in R. The unit of observation in this dataset is each row representing a player's season batting performance. Three columns in this dataset for each entry are playerID, yearID, and the teamID. The library provides data from 1871 to the latest season of availible MLB statistics - currently, 2023. One question you could answer based on this data is how many teams played in the MLB in the 2023 season.
+
+```{r}
+library(retrosheet)
+game_log <- get_retrosheet("game", 2023)
+head(game_log,5)
+```
+Dataset 2: I choose the Game Log dataset from the retrosheet library. This dataset using MLB game-level data is imported from Retrosheet.org which compiles MLB scores. I got this dataset by using the get method from the retrosheet library which allows me to retrieve the data from the website. The unit of observation in this data is a game log represented as an entry with columns representing various attributes about the game. Three columns in this dataset for each entry are Date, Day, and VisTm - the visiting teamID. The dataset covers game logs for the 2023 season. One question that could be answered using this dataset using the DayNight column is how does playing a game at night vs at day affect the performance of the Toronto Blue Jays?
+
+```{r}
+library(baseballr)
+mlb_schedule <- mlb_schedule(season = 2025)
+head(mlb_schedule,5)
+```
+Dataset 3: I choose the MLB Schedule dataset from the baseballr library. This dataset is pulled using MLB's API and returns the schedule for the 2025 season. I got this dataset by using the mlb_schedule function from the baseballr library. The unit of observation in this data is a scheduled game represented as an entry with columns representing various attributes about the game. Three columns in this dataset for each entry are Date, teams_home_team_name, and teams_away_team_name. The dataset covers game logs for the 2025 season. One question that could be answered using this dataset is how many Exhibition games will be player in the 2025 season.
+
+## Question 2: NCAA Softball Data Analysis [15 points]
+
+In this problem, we will look at NCAA softball hitting data for the 2024 season using the R package `softballR`. We will install the current version of the package available at https://github.com/sportsdataverse/softballR. If this is your first time using `softballR` un-comment and run the lines of code below to install the `softballR` package. 
+
+```{r}
+# Install devtools if not already installed
+# install.packages("devtools") 
+# library(devtools)
+# Install softballR from Github
+# devtools::install_github("tmking2002/softballR") 
+```
+
+Run the code below to load in the hitting data.
+
+```{r}
+library(softballR)
+hitting <- softballR::load_ncaa_softball_playerbox(
+  season = 2024, 
+  category = "Hitting"
+)
+```
+
+Question 2a (1 points). What is the unit of observation of the dataset? Each unit of observation is one player(row) as an entry with certain attributes(columns) to represent the player.
+
+```{r}
+head(hitting)
+```
+
+Question 2b (1 points). What is the range of game dates included in the dataset? The range of game dates included in the dataset is from 02/08/2024 to 05/30/2024.
+
+```{r}
+range(hitting$game_date)
+```
+
+Question 2c (2 points). How many unique teams are in the dataset? How many unique players are in the dataset (note: different players that are on different teams might have the same name)? There are 353 unique teams. There are 7752 unique players.
+```{r}
+length(unique(hitting$team))
+
+length(unique(hitting$player))
+```
+
+Question 2d (1 points). The NCAA tournament began on May 17, 2024. Filter your dataset to only include games that occurred before May 17, 2024.
+```{r}
+library(dplyr)
+hitting <- hitting |>
+  filter(as.Date(game_date, format = "%m/%d/%Y") < as.Date("05/17/2024", format = "%m/%d/%Y"))
+
+range(hitting$game_date)
+```
+
+Question 2e (3 points). Using the filtered dataset from question 2d, create a new dataset that gives the total number of games (g), at bats (ab), and hits (h) for each player. Order this dataset from most to fewest hits and display the first 5 rows. Which player has the most hits? The player with the most hits is Emma Jackson.
+```{r}
+filt_hitting <- hitting |>
+  group_by(player) |>
+  summarise(g = sum(g, na.rm = TRUE), ab = sum(ab,na.rm = TRUE), h = sum(h, na.rm = TRUE)) |>
+  arrange(desc(h))
+
+head(filt_hitting,5)
+```
+
+Question 2f (3 points). Add a new column to the dataset created in question 2e that calculates each player’s batting average (total hits divided by total at-bats). Filter out players with fewer than 50 at-bats. Which player has the highest batting average? Why do you think we filter for a minimum number of at-bats before drawing conclusions? CC Wong had the highest batting average at .47. We filter for a minimum number of hits because low sample size may yield high batting averages based on little data. This ensures the batting_avg represents the statistic correctly and not due to random variance. 
+
+```{r}
+filt_hitting <- filt_hitting |>
+  filter(ab >= 50) |>
+  mutate(
+    batting_avg = h/ab
+  ) |>
+  arrange(desc(batting_avg))
+head(filt_hitting)
+```
+
+Question 2g (2 points). Create a new filtered dataset that includes only data from April 2024. Which player had the most hits in April 2024? The player with the most hits in April 2024 is Dakota Daniels tied with 4 other players - Kayla Edwards, Halle Hogan, Caitlin Goldwait, and Tavia Leadon - at 5 hits each.
+```{r}
+hitting_april <- hitting |>
+  mutate(game_date = as.Date(game_date, format = "%m/%d/%Y")) %>%
+  filter(
+    game_date >= as.Date("2024/04/01") &
+    game_date <= as.Date("2024/04/30")
+  ) |> arrange(desc(h))
+
+head(hitting_april)
+```
+
+Question 2h (2 points). If you are trying to identify the best hitter on a team, would you rather look at total hits or batting average as your primary metric? Explain your reasoning in 1-3 sentences. What might each capture, and what are the limitations? If I was trying to identify the best hitter on a team, I think batting average would be the primary metric to assess. Batting average serves as a metric to encompass the accuracy by calculating how many hits there are relative to times the player has gone to bat(at bat) which is an important factor to consider since it shows overall performance with consideration for how many opportunities each person got. For example, consider two people each with 20 hits but person A got more chances at bat than person B - person A's batting average would be lower cause they took more attempts to hit 20 balls than person B who did it in less, thus the higher batting average. 
+
+## Extra Credit: Live Data Collection [3 points]
+
+Watch at least 15 minutes of a sports game on TV or in person and record some data live while watching the game. For example, you could do one of the following:
+
+- Watch 1 quarter of a basketball game and collect data on shot attempts, recording the player who made the attempt and whether it was successful
+- Watch 15 minutes of a soccer game and collect data on team possessions, recording the team and possession length
+- Watch 1 quarter of a football game and collect data on play type, recording the team, play type (run, pass, field goal attempt, punt), and yards gained/lost
+
+```{r}
+df <- data.frame(
+  Team1_BAR = c(54, 7, 129, 86, 52, 94, 4, 89, 20),
+  Team2_RMD = c(3, 15, 23, 6, 74, 95, 32, 58, 9)
+  )
+head(df)
+```
+
+Include the data you collected, and a brief reflection on the challenges you faced during the data collection process.
+
+The data I collected was for a match of soccer played between FC Barcelona and Real Madrid in the 2025 Copa Del Rey Final. The main challenge faced in collecting this data is the required data to be inputted by the user. The units for the data is in seconds(s). This process requires time to watch the footage and carefully stop the timer when the possession switches team. Due to this process, it is not exact and one of the main challenges caused by this, is human error. Most of the difficulties such as determining exactly when the possession switches is something a computer can automate but the ask tasks may require manual data entry and thinking from a human.
